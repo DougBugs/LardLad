@@ -1,0 +1,78 @@
+import time
+from ultrasonic import sonic
+from motor import Motor
+from machine import Pin, PWM
+from encoder import Encoder
+
+line_sensor = Pin(26, Pin.IN)
+pwm = PWM(Pin(15))
+pwm.freq(50)
+TRIG = 3
+ECHO = 2
+ultrasonic_sensor = sonic(TRIG, ECHO)
+motor_left = Motor("left", 8, 9, 6)
+motor_right = Motor("right", 11, 10, 7)
+ENC_L = 18
+ENC_R = 19
+enc = Encoder(ENC_L, ENC_R)
+
+
+def set_servo_angle(angle):
+    position = int(8000 * (angle / 180) + 1000)
+    pwm.duty_u16(position)
+
+
+for POS in range(90):
+    set_servo_angle(POS)
+sensor_value = 0
+
+while True:
+    dist = ultrasonic_sensor.distance_mm()
+    sensor_value = line_sensor.value()
+    if dist < 50:
+        sensor_value = line_sensor.value()
+        motor_right.duty(0)
+        motor_left.duty(0)
+        for POS in range(90, 180, 40):
+            set_servo_angle(POS)
+            time.sleep(0.5)
+        dist1 = ultrasonic_sensor.distance_mm()
+        time.sleep(0.1)
+        for POS in range(90, 0, -40):
+            set_servo_angle(POS)
+            time.sleep(0.5)
+        dist2 = ultrasonic_sensor.distance_mm()
+        time.sleep(0.1)
+        set_servo_angle(90)
+        time.sleep(0.5)
+        dist = ultrasonic_sensor.distance_mm()
+        if dist1 < dist2:
+            sensor_value = line_sensor.value()
+            motor_right.set_backwards()
+            motor_left.set_backwards()
+            motor_right.duty(0)
+            motor_left.duty(75)
+            time.sleep(0.5)
+            motor_right.duty(0)
+            motor_left.duty(0)
+            time.sleep(3)
+        else:
+            motor_right.set_backwards()
+            motor_left.set_backwards()
+            motor_right.duty(75)
+            motor_left.duty(0)
+            time.sleep(0.5)
+            motor_right.duty(0)
+            motor_left.duty(0)
+            time.sleep(3)
+            sensor_value = line_sensor.value()
+    while dist > 50:
+        dist = ultrasonic_sensor.distance_mm()
+        motor_right.duty(50)
+        motor_left.duty(50)
+        motor_left.set_forwards()
+        motor_right.set_forwards()
+    if sensor_value == 1:
+        motor_left.duty(0)
+        motor_right.duty(0)
+        break
