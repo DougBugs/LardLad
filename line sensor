@@ -1,0 +1,75 @@
+import time
+from ultrasonic import sonic
+from motor import Motor
+from machine import Pin, PWM
+from encoder import Encoder
+import threading
+
+main_sensor = Pin(26, Pin.IN)
+left_sensor = Pin(28, Pin.IN)
+right_sensor = Pin(27, Pin.IN)
+
+pwm = PWM(Pin(15))
+pwm.freq(50)
+TRIG = 3
+ECHO = 2
+ultrasonic_sensor = sonic(TRIG, ECHO)
+motor_left = Motor("left", 8, 9, 6)
+motor_right = Motor("right", 11, 10, 7)
+ENC_L = 18
+ENC_R = 19
+enc = Encoder(ENC_L, ENC_R)
+
+
+def sensor_avg(average):  # the function that will run in the thread
+    while True:
+        time.sleep(0.5)  # running this function constantly would take a lot of memory
+
+        left_value = left_sensor.value()
+        main_value = main_sensor.value()
+        right_value = right_sensor.value()
+
+        try:
+            average = ((left_value * -15) + (main_value * 0) + (right_value * 15)) / (
+                        left_value + main_value + right_value)
+        except ZeroDivisionError:
+            average = float('nan')  # Handle division by zero case
+        with sensor_data_lock:
+            sensor_data['avg'] = average
+        return average
+
+
+sensor_data_lock = threading.Lock()
+sensor_data = {'avg': 0}
+
+sensor_thread = threading.Thread(target=sensor_avg, args=(sensor_data,))
+sensor_thread.start()
+
+
+def set_servo_angle(angle):
+    position = int(8000 * (angle / 180) + 1000)
+    pwm.duty_u16(position)
+
+
+for POS in range(90):  # set servo to the 90 degrees before we start
+    set_servo_angle(POS)
+sensor_value = 0
+
+while True:
+    with sensor_data_lock:
+        avg = sensor_data['avg']
+    dist = ultrasonic_sensor.distance_mm()
+    if avg > 0 and dist > 50:
+        motor_left.duty(50 + avg)
+        motor_right.duty(50)  # here instead of giving a static number we should turn harder depending on the
+        # severity of how far off the line we are
+    elif avg < 0 and dist > 50:
+        motor_right.duty(50 + avg)
+        motor_left.duty(50)
+    elif avg == 0 and dist > 50:
+        motor_right.duty(50)
+        motor_left.duty(50)
+    if dist < 50:
+        sensor_value = main_sensor.value()
+        motor_right.duty(0)
+        motor_left.duty(0)
