@@ -1,0 +1,30 @@
+import time
+from ultrasonic import sonic
+from motor import Motor
+from machine import Pin, PWM
+from encoder import Encoder
+
+motor_left = Motor("left", 8, 9, 6)
+motor_right = Motor("right", 11, 10, 7)
+
+ENC_L = 18
+ENC_R = 19
+enc = Encoder(ENC_L, ENC_R)
+
+
+while True:
+    motor_left.set_backwards()  # Set the left motor to run forwards
+    motor_right.set_forwards()  # Set the right motor to run forwards
+    enc.clear_count()  # Reset the encoder to zero
+    motor_left.duty(50)
+    motor_right.duty(50)
+    print("right ", enc.get_right())
+    print("left ", enc.get_left())
+    while enc.get_left() > enc.get_right():
+        motor_left.duty(50)
+        motor_right.duty(0)
+        print("turning left")
+    while enc.get_right() > enc.get_left():
+        motor_left.duty(0)
+        motor_right.duty(50)
+        print("turning right")
