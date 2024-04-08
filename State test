@@ -1,0 +1,102 @@
+import ogrid
+from encoder import Encoder
+from ultrasonic import sonic
+from motor import Motor
+import time
+from machine import PWM, Pin
+
+# IR sensors
+MAIN = 26
+LEFT = 28
+RIGHT = 27
+# inputs
+main_sensor = Pin(MAIN, Pin.IN)
+left_sensor = Pin(LEFT, Pin.IN)
+right_sensor = Pin(RIGHT, Pin.IN)
+# servo
+SERVO = 15
+FREQ = 50
+pwm = PWM(Pin(SERVO))
+pwm.freq(FREQ)
+# UR sensor
+TRIG = 3
+ECHO = 2
+ultrasonic_sensor = sonic(TRIG, ECHO)
+# motors
+l_motor = Motor("left", 8, 9, 6)
+r_motor = Motor("right", 11, 10, 7)
+# encoders
+ENC_L = 18
+ENC_R = 19
+enc = Encoder(ENC_L, ENC_R)
+# state some variables
+state_list = ['line_following', 'stop', 'searching', 'driving']
+state = 'line_following'
+print("before loop boobs")
+while True:
+    time.sleep(0.1)  # running this function constantly would take a lot of memory
+
+    # read IR sensors into variables
+    left_value = left_sensor.value()
+    main_value = main_sensor.value()
+    right_value = right_sensor.value()
+    # read UR sensor into variable
+    dist = ultrasonic_sensor.distance_mm()
+    # commands depending on what state we set lard to
+    while state == 'driving':
+        enc.clear_count()
+        time.sleep(0.1)
+        # read sensors
+        dist = ultrasonic_sensor.distance_mm()
+        r_motor.set_forwards()
+        l_motor.set_forwards()
+        r_motor.duty(50)
+        l_motor.duty(50)
+        if enc.get_left() > enc.get_right():
+            l_motor.duty(50)
+            r_motor.duty(0)
+            print("turning left")
+        elif enc.get_right() > enc.get_left():
+            l_motor.duty(0)
+            r_motor.duty(50)
+            print("turning right")
+        elif enc.get_right() == enc.get_left():
+            r_motor.duty(50)
+            l_motor.duty(50)
+        elif dist < 50:
+            state = 'stop'
+    while state == 'line_following':
+        print("boobs")
+        time.sleep(0.1)
+        # collecting sensor data before calc
+        left_value = left_sensor.value()
+        main_value = main_sensor.value()
+        right_value = right_sensor.value()
+        # reading dist
+        dist = ultrasonic_sensor.distance_mm()
+        # I believe we will go forward for this
+        l_motor.set_forwards()
+        r_motor.set_forwards()
+        # Line "predicting" calculation
+        try:
+            average = ((left_value*-15)+(main_value * 0)+(right_value * 15))/(left_value+main_value+right_value)
+        except ZeroDivisionError:
+            average = 'na'  # Handle division by zero case
+        print(average)
+        if average < 0:
+            l_motor.duty(50)
+            r_motor.duty(0)
+        elif average > 0:
+            l_motor.duty(0)
+            r_motor.duty(50)
+        elif average == 'na' or dist < 50:
+            r_motor.duty(50)
+            l_motor.duty(50)
+            l_motor.set_backwards()
+            r_motor.set_backwards()
+        else:
+            r_motor.duty(50)
+            l_motor.duty(50)
+    while state == 'stop':
+        l_motor.duty(0)
+        r_motor.duty(0)
