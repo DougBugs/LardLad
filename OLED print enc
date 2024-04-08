@@ -1,0 +1,58 @@
+import time
+from ultrasonic import sonic
+from motor import Motor
+from machine import Pin, PWM
+from encoder import Encoder
+from machine import Pin, I2C
+from ssd1306 import SSD1306_I2C
+
+
+i2c = I2C(0, sda=Pin(12), scl=Pin(13))
+oled = SSD1306_I2C(128, 64, i2c)
+
+# create encoder object
+ENC_L = 18
+ENC_R = 19
+enc = Encoder(ENC_L, ENC_R)
+
+
+# Define the ultrasonic sensor (Instead of a pin 2 or 3 we can now write "TRIG" or "ECHO")
+TRIG = 3
+ECHO = 2
+ultrasonic_sensor = sonic(TRIG, ECHO)
+
+# define the motor objects
+motor_left = Motor("left", 8, 9, 6)
+motor_right = Motor("right", 11, 10, 7)
+
+# define the IR sensor
+line_sensor = Pin(26, Pin.IN)
+
+# We give the sensor value a value of 1 so that the while loop will start successfully
+sensor_value = 0
+
+# Servo pins
+pwm = PWM(Pin(15))
+pwm.freq(50)
+
+# declare variables for moving servo
+dist1 = 0
+dist2 = 0
+
+motor_right.set_forwards()
+motor_left.set_forwards()
+motor_left.duty(50)
+motor_right.duty(50)
+time.sleep(3)
+
+
+while True:
+    time.sleep(2)
+    oled.text("enc_r : {}".format(enc.get_right()), 0, 0)  # prints the text at coordinates (0,0), (top left)
+    oled.text("enc_l : {}".format(enc.get_left()), 0, 30)# prints the text at coordinates (0,0), (top left)
+    time.sleep(2)
+    oled.show()
+    enc.clear_count()
+    oled.fill(0)
+
+
