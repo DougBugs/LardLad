@@ -1,0 +1,58 @@
+from OLED import SSD1306_I2C
+from encoder import Encoder
+from ultrasonic import sonic
+from motor import Motor
+import time
+from machine import PWM, Pin, I2C, ADC
+
+# OLD
+i2c = I2C(0, sda=Pin(12), scl=Pin(13))
+Oled = SSD1306_I2C(128, 64, i2c)
+# inputs
+m_sensor = ADC(Pin(27))
+l_sensor = ADC(Pin(26))
+r_sensor = ADC(Pin(28))
+m = 0
+l = -21
+r = 21
+# UR sensor
+TRIG = 3
+ECHO = 2
+ultrasonic_sensor = sonic(TRIG, ECHO)
+# motors
+l_motor = Motor("left", 8, 9, 6)
+r_motor = Motor("right", 11, 10, 7)
+# encoders
+enc = Encoder(18, 19)
+# state some variables
+avg_pwm = 50
+state = 'liner'
+
+while state == 'liner':
+    time.sleep(0.2)
+    l_motor.set_backwards()
+    r_motor.set_backwards()
+    r_motor.duty(0)
+    l_motor.duty(0)
+    M = m_sensor.read_u16()
+    L = l_sensor.read_u16()
+    R = r_sensor.read_u16()
+    numerator = (L * l) + (M * m) + (R * r)
+    denominator = L + M + R
+    line_dist = numerator / denominator
+    Oled.text("line_dist = {}".format(line_dist), 0, 0)
+    Oled.show()
+    time.sleep(0.1)
+    Oled.fill(0)
+    if line_dist > 0:
+        l_motor.duty(60)
+        r_motor.duty(0)
+    else:
+        l_motor.duty(0)
+        r_motor.duty(50)
+
+while state == 'stop':
+    l_motor.duty(0)
+    r_motor.duty(0)
+    Oled.text("stopped", 0, 0)
+    Oled.show()
