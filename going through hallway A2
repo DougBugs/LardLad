@@ -1,0 +1,125 @@
+from machine import Pin, I2C, PWM
+from motor import Motor
+from ssd1306 import SSD1306_I2C
+from encoder import Encoder
+from ultrasonic import sonic
+import time
+
+# initialise a pin
+green_LED = Pin(25, Pin.OUT)
+
+# initialise servo
+pwm = PWM(Pin(15))
+pwm.freq(50)
+
+
+def setServoAngle(angle):
+    position = int(8000 * (angle / 180) + 1000)
+    pwm.duty_u16(position)
+
+
+# initialise ultrasonic
+
+
+TRIG = 3
+ECHO = 2
+ultrasonic_sensor = sonic(TRIG, ECHO)
+dist = ultrasonic_sensor.distance_mm()
+
+# initialise oled
+i2c = I2C(0, sda=Pin(12), scl=Pin(13))
+oled = SSD1306_I2C(128, 64, i2c)
+
+# initialise a motor
+motor_left = Motor("Left", 8, 9, 6)
+motor_right = Motor("Right", 10, 11, 7)
+
+# initialise encoders
+ENC_L = 18
+ENC_R = 19
+enc = Encoder(ENC_L, ENC_R)
+#
+# motor_right.set_forwards()
+# motor_left.set_forwards()
+# motor_left.duty(50)
+# motor_right.duty(50)
+# time.sleep(1)
+# motor_left.duty(40)
+# motor_right.duty(40)
+# a = 0
+# len = [".", ".", ".", ".", ".", ".", ".", ".", ".", "."]
+# for i in range(0, 181, 20):
+#     setServoAngle(i)                                                                        #lines 46-48 turn servo
+#     time.sleep(0.5)
+#     len[a] = int(ultrasonic_sensor.distance_mm())                                           #stores distance from each term in element of list
+#     a += 1                                                                                  #makes add distance to next variable in list
+#     oled.text("{}, {}, {}".format(len[1], len[2], len[3]), 0, 0)                #gives distances from right of lard
+#     oled.text("{}, {}".format(len[4], len[5]), 0, 10)                           #gives distances facing forward
+#     oled.text("{}, {}, {}".format(len[6], len[7], len[8]), 0, 20)               #gives distances for left(taken from behind lard)
+#     oled.text("{}".format(i), 0, 50)                                                  #gives final degree (make sure it reaches 180)
+#     oled.show()
+#     oled.fill(0)                                                                            #makes it not overlap
+# setServoAngle(90)
+# dl = (len[6] + len[7] + len[8])/3                       #average of left distances
+# dm = (len[5] + len[4])/2                                #average of middle distances
+# dr = (len[1] + len[2] + len[3])/3                       #average of right distances
+# # if dm < 100:
+# #     motor_left.duty(0)
+# #     motor_right.duty(0)
+
+
+while True:
+    a = 0
+    len = [".", ".", ".", ".", ".", ".", ".", ".", ".", "."]
+    for i in range(0, 181, 20):
+        motor_left.duty(0)
+        motor_right.duty(0)
+        setServoAngle(i)                                                            # lines 46-48 turn servo
+        time.sleep(0.5)
+        len[a] = int(ultrasonic_sensor.distance_mm())                               # stores distance from each term in element of list
+        a += 1                                                                      # makes add distance to next variable in list
+        oled.text("{}, {}, {}".format(len[1], len[2], len[3]), 0, 0)    # gives distances from right of lard
+        oled.text("{}, {}".format(len[4], len[5]), 0, 10)               # gives distances facing forward
+        oled.text("{}, {}, {}".format(len[6], len[7], len[8]), 0,20)    # gives distances for left(taken from behind lard)
+        oled.text("{}".format(i), 0, 50)                                      # gives final degree (make sure it reaches 180)
+        oled.show()
+        oled.fill(0)                                                                # makes it not overlap
+    setServoAngle(90)
+    time.sleep(0.5)
+    dl = (len[6] + len[7] + len[8]) / 3                                 # average of left distances
+    dm = (len[5] + len[4]) / 2                                          # average of middle distances
+    dr = (len[1] + len[2] + len[3]) / 3                                 # average of right distances
+    if dm > 250 and dr > 250 and dl > 250:                      #there is nothing for 250 in all directions
+        motor_right.set_forwards()
+        motor_left.set_forwards()
+        motor_left.duty(60)
+        motor_right.duty(50)
+        time.sleep(0.1)
+    if (dm < 200 and dl > dr) or dr < 100:           #(close to front and closer to right) or close to right
+        motor_right.set_backwards()
+        motor_left.set_backwards()
+        motor_left.duty(65)
+        motor_right.duty(50)
+        time.sleep(0.5)
+    if (dm < 200 and dr > dl) or dl < 100:          #(close to front and closer to left) or close to left
+        motor_right.set_backwards()
+        motor_left.set_backwards()
+        motor_left.duty(65)
+        motor_right.duty(50)
+        time.sleep(0.5)
+    elif dl < dr:                           #closer to left side
+        motor_right.set_forwards()
+        motor_left.set_forwards()
+        motor_left.duty(80)
+        motor_right.duty(50)
+        time.sleep(0.3)
+    elif dr < dl:                           #closer to right side
+        motor_right.set_forwards()
+        motor_left.set_forwards()
+        motor_left.duty(60)
+        motor_right.duty(70)
+        time.sleep(0.3)
+
+
+
+
