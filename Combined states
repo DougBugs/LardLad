@@ -1,0 +1,142 @@
+from OLED import SSD1306_I2C
+from encoder import Encoder
+from ultrasonic import sonic
+from motor import Motor
+import time
+from machine import PWM, Pin, I2C, ADC
+
+# OLED
+i2c = I2C(0, sda=Pin(12), scl=Pin(13))
+Oled = SSD1306_I2C(128, 64, i2c)
+# inputs
+m_sensor = ADC(Pin(27))
+l_sensor = ADC(Pin(26))
+r_sensor = ADC(Pin(28))
+# these are the distance that each sensor is away from the centre of the robot
+m = 0
+l = -21
+r = 21
+# UR sensor
+USmiddle = sonic(3, 2)
+USleft = sonic()
+USright = sonic()
+# motors
+l_motor = Motor("left", 8, 9, 6)
+r_motor = Motor("right", 11, 10, 7)
+
+
+# functions for controlling the motors
+def forward(left, right):
+    r_motor.set_forwards()
+    l_motor.set_forwards()
+    r_motor.duty(right)
+    l_motor.duty(left)
+
+
+def stop():
+    l_motor.duty(0)
+    r_motor.duty(0)
+
+
+def backward(left, right):
+    r_motor.set_backwards()
+    l_motor.set_backwards()
+    l_motor.duty(left)
+    r_motor.duty(right)
+
+
+# current state machine variables
+# liner (follows lines)
+# walls (goes through the cone walls that are on the course)
+# stop (stops the robot with no way out of this state. Must be restarted completely)
+
+# (CHECK ME BEFORE TESTING)
+state = 'walls'  # put the state machine in to the right state to start
+# we should never exit this while loop as if we did the state would be reset to whatever it is above.
+while True:
+    # state for following lines
+    while state == 'liner':
+        time.sleep(0.2)
+        stop()
+        # read the sensor data into the variables
+        M = m_sensor.read_u16()
+        L = l_sensor.read_u16()
+        R = r_sensor.read_u16()
+        # let's do the arithmetic mean formula
+        numerator = (L * l) + (M * m) + (R * r)
+        denominator = L + M + R
+        line_dist = numerator / denominator
+        # give some info on the oled
+        Oled.fill(0)
+        Oled.text("state = {}".format(state), 0, 0)
+        Oled.text("Left = {}".format(L), 0, 12)
+        Oled.text("Middle = {}".format(M), 0, 24)
+        Oled.text("Right = {}".format(R), 0, 36)
+        Oled.text("eq = {}".format(line_dist), 0, 48)
+        Oled.show()
+        time.sleep(0.2)
+        # This is where we will make moves left or right depending on where the line is. I have attempted using the
+        # functions I set out above so that the code is cleaner down here in the thick of things
+        if line_dist > 0:
+            forward(0, (min(100, 50 + int(line_dist))))
+        elif line_dist < 0:
+            forward((min(100, 60 + int(line_dist))), 0)
+        # checks to see if we should change states to avoid walls
+        if USmiddle.distance_mm() < 50 or USleft.distance_mm() < 20 or USright.distance_mm() < 20:
+            state = 'walls'
+            break
+        # some code to find the line again or maybe to switch states
+        if M + R + L < 4000:
+            if USmiddle.distance_mm() < 50 or USleft.distance_mm() < 20 or USright.distance_mm() < 20:
+                state = 'walls'
+                break
+            else:
+                # This is where we should put some code to find the line again. Hasn't been done yet if you hadn't
+                # noticed
+                state = 'stop'
+                break
+            break
+
+    # this is the state machine for following the cone-shaped walls
+    while state == 'walls':
+        # set some mf shit straight
+        l_motor.duty(0)
+        r_motor.duty(0)
+        l_motor.set_forwards()
+        r_motor.set_forwards()
+        USl = USleft.distance_mm()
+        USr = USright.distance_mm()
+        USm = USmiddle.distance_mm()
+
+        # Give some oled info
+        Oled.fill(0)
+        Oled.text("state: {}".format(state), 0, 0)
+        Oled.text("left = {}".format(USl), 0, 12)
+        Oled.text("middle = {}".format(USm), 0, 24)
+        Oled.text("right = {}".format(USr), 0, 36)
+        Oled.show()
+
+        # check that we aren't dangerously close to a wall and back up if need be
+        if USl or USr or USm < 20:
+            r_motor.set_backwards()
+            l_motor.set_backwards()
+            r_motor.duty(50)
+            l_motor.duty(60)
+            time.sleep(0.3)
+            continue
+        # now we are going to try and stay in the centre of the wall cone
+        wall_centre = USl - USr
+        l_motor.set_forwards()
+        r_motor.set_forwards()
+        if wall_centre < 0:
+            r_motor.duty(50)
+            l_motor.duty(60 + abs(wall_centre))
+        elif wall_centre > 0:
+            r_motor.duty(50 + abs(wall_centre))
+            l_motor.duty(60)
+        time.sleep(0.3)
+    while state == 'stop':
+        stop()
+        Oled.fill(0)
+        Oled.text("stopped", 0, 0)
+        Oled.show()
