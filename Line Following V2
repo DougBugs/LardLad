@@ -1,0 +1,56 @@
+while True:
+    # state for following lines
+    while state == 'liner':
+        stop()
+        time.sleep(0.2)
+        # read IR sensors into variables
+        IR_left = l_sensor.read_u16()
+        IR_middle = m_sensor.read_u16()
+        IR_right = r_sensor.read_u16()
+        # do the line distance calculation with a function
+        line_dist = l_centre(IR_left, IR_middle, IR_right)
+        # pull the US sensors into variables to do some checks later in loop
+        USl = USleft.distance_mm()
+        USr = USright.distance_mm()
+        USm = USmiddle.distance_mm()
+        # read data onto oled for ease of access
+        Oled.fill(0)
+        Oled.text('State = {}'.format(state), 0, 0)
+        Oled.text('IR_left = {}'.format(IR_left), 0, 12)
+        Oled.text('IR_middle = {}'.format(IR_middle), 0, 24)
+        Oled.text('IR_right = {}'.format(IR_right), 0, 36)
+        Oled.text('Line Dist = {}'.format(line_dist), 0, 48)
+        Oled.show()
+        # check if lost line
+        # this will need to be updated to go into certain states depending on what's happened
+        if IR_right < 2300 and IR_left < 2300 and IR_middle < 2300:
+            Oled.fill(0)
+            Oled.text('State = lost line lol', 0, 0)
+            Oled.show()
+            time.sleep(5)
+            continue
+        elif 1 < USl < 50 or 1 < USm < 50 or 1 < USr < 50:
+            state = 'walls'
+            break
+        loop2 = 'true'
+        while line_dist < 0:
+            forward(0, 50 + int(line_dist))
+            IR_left = l_sensor.read_u16()
+            IR_middle = m_sensor.read_u16()
+            IR_right = r_sensor.read_u16()
+            line_dist = l_centre(IR_left, IR_middle, IR_right)
+            if line_dist >= 0:
+                loop2 = 'false'
+                break
+            elif IR_right < 2300 and IR_left < 2300 and IR_middle < 2300:
+                loop2 = 'false'
+                break
+        if loop2 == 'true':
+            while line_dist > 0:
+                forward(50 + int(line_dist), 0)
+                IR_left = l_sensor.read_u16()
+                IR_middle = m_sensor.read_u16()
+                IR_right = r_sensor.read_u16()
+                line_dist = l_centre(IR_left, IR_middle, IR_right)
+                if IR_right < 2300 and IR_left < 2300 and IR_middle < 2300:
+                    break
