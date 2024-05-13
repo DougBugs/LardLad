@@ -1,0 +1,191 @@
+from machine import Pin, I2C, PWM, ADC
+from motor import Motor
+from ssd1306 import SSD1306_I2C
+from encoder import Encoder
+from ultrasonic import sonic
+import time
+
+# initialise a pin
+green_LED = Pin(25, Pin.OUT)
+
+# initialise servo
+pwm = PWM(Pin(15))
+pwm.freq(50)
+l_sensor = ADC(Pin(26))
+m_sensor = ADC(Pin(27))
+r_sensor = ADC(Pin(28))
+
+
+def setServoAngle(angle):
+    position = int(8000 * (angle / 180) + 1000)
+    pwm.duty_u16(position)
+
+
+# initialise ultrasonic
+
+
+TRIG = 3
+ECHO = 2
+ultrasonic_sensor = sonic(TRIG, ECHO)
+dist = ultrasonic_sensor.distance_mm()
+
+# initialise oled
+i2c = I2C(0, sda=Pin(12), scl=Pin(13))
+oled = SSD1306_I2C(128, 64, i2c)
+
+# initialise a motor
+motor_left = Motor("Left", 8, 9, 6)
+motor_right = Motor("Right", 10, 11, 7)
+
+# initialise encoders
+ENC_L = 18
+ENC_R = 19
+enc = Encoder(ENC_L, ENC_R)
+state = '?'
+
+motor_right.set_forwards()
+motor_left.set_forwards()
+motor_left.duty(50)
+motor_right.duty(50)
+time.sleep(0.2)
+motor_left.duty(0)
+motor_right.duty(0)
+time.sleep(0.1)
+motor_left.duty(40)
+motor_right.duty(30)
+
+
+while state == '?':
+    motor_right.set_forwards()
+    motor_left.set_forwards()
+    motor_left.duty(50)
+    motor_right.duty(50)
+    time.sleep(0.1)
+    motor_left.duty(0)
+    motor_right.duty(0)
+    IR_left = l_sensor.read_u16()
+    IR_middle = m_sensor.read_u16()
+    IR_right = r_sensor.read_u16()
+    IR_av = (IR_right + IR_left + IR_middle)/3
+    enc_l = enc.get_left()
+    enc_r = enc.get_right()
+    enc_av = (enc.get_right()+enc.get_right())/2
+    oled.fill(0)
+    oled.text("L = {}".format(IR_left), 0, 0)
+    oled.text("M = {}".format(IR_middle), 0, 10)
+    oled.text("R = {}".format(IR_right), 0, 20)
+    oled.text("Av = {}".format(IR_av), 0, 30)
+    oled.text("l enc = {}".format(enc_l), 0, 40)
+    oled.text("r enc = {}".format(enc_r), 0, 50)
+    oled.text("av enc = {}".format(enc_av), 0, 60)
+    oled.show()
+    time.sleep(0.1)
+    # insert line following code
+    if IR_av > 2900:
+        oled.fill(0)
+        oled.text("oh god".format(IR_left), 0, 30)
+        oled.show()
+        time.sleep(0.1)
+        motor_right.set_forwards()
+        motor_left.set_forwards()
+        motor_left.duty(50)                     #moves robot out of black
+        motor_right.duty(50)
+        time.sleep(0.3)
+        motor_left.duty(0)
+        motor_right.duty(0)
+        enc.clear_count()
+        oled.fill(0)
+        IR_left = l_sensor.read_u16()
+        IR_middle = m_sensor.read_u16()
+        IR_right = r_sensor.read_u16()
+        IR_av = (IR_right + IR_left + IR_middle) / 3
+        while enc_av < 50 and IR_av < 2900 and state == '?':
+            enc_l = enc.get_left()
+            enc_r = enc.get_right()
+            enc_av = (enc.get_right() + enc.get_right()) / 2
+            IR_left = l_sensor.read_u16()
+            IR_middle = m_sensor.read_u16()
+            IR_right = r_sensor.read_u16()
+            IR_av = (IR_right + IR_left + IR_middle) / 3
+            oled.text("hmmm".format(IR_left), 0, 30)
+            oled.show()
+            time.sleep(0.1)
+            motor_right.set_forwards()
+            motor_left.set_forwards()
+            motor_left.duty(50)
+            motor_right.duty(50)
+            time.sleep(0.1)
+            motor_left.duty(0)
+            motor_right.duty(0)
+            IR_left = l_sensor.read_u16()
+            IR_middle = m_sensor.read_u16()
+            IR_right = r_sensor.read_u16()
+            IR_av = (IR_right + IR_left + IR_middle) / 3
+            if IR_av > 2500:
+                motor_right.set_forwards()
+                motor_left.set_forwards()
+                motor_left.duty(0)
+                motor_right.duty(0)
+                oled.fill(0)
+                oled.text("roundabout :)".format(IR_left), 0, 30)
+                oled.show()
+                state = 'roundabout'
+        if state == 'roundabout':
+            oled.fill(0)
+            oled.text("in :)".format(IR_left), 0, 30)
+            oled.show()
+            motor_right.set_forwards()
+            motor_left.set_forwards()
+            # motor_left.duty(50)  # moves robot out of black
+            # motor_right.duty(50)
+            time.sleep(0.1)
+            motor_left.duty(0)
+            motor_right.duty(0)
+            x = 0
+            while x < 2:
+                motor_left.set_forwards()
+                motor_right.set_forwards()
+                motor_left.duty(50)
+                # motor_right.duty(40)
+                time.sleep(0.2)
+                motor_left.duty(0)
+                motor_right.duty(0)
+                time.sleep(0.1)
+                IR_left = l_sensor.read_u16()
+                IR_middle = m_sensor.read_u16()
+                IR_right = r_sensor.read_u16()
+                IR_av = (IR_right + IR_left + IR_middle) / 3
+                oled.fill(0)
+                oled.text("x = {}".format(x), 0, 30)
+                oled.text("av = {}".format(IR_av), 0, 40)
+                oled.show()
+                if IR_av > 2500:
+                    x += 1
+                    oled.fill(0)
+                    oled.text("x = {}".format(x), 0, 30)
+                    oled.show()
+                    motor_left.duty(50)
+                    time.sleep(0.4)
+            motor_right.set_forwards()
+            motor_left.set_forwards()
+            motor_left.duty(0)
+            motor_right.duty(50)
+            time.sleep(0.6)
+            motor_left.duty(0)
+            motor_right.duty(0)
+            oled.fill(0)
+            oled.text("done, x = {}".format(x), 0, 30)
+            oled.show()
+            state = 'out'           #turn state back to line following after 
+
+            #then once that has happened set it to rotate in place until line is detected again(black).
+
+    #todo: test to ensure this prevents robot from getting stuck at initial exit
+motor_right.set_forwards()
+motor_left.set_forwards()
+motor_left.duty(50)
+motor_right.duty(50)
+time.sleep(0.1)
+motor_left.duty(40)
+motor_right.duty(30)
+ 
