@@ -1,0 +1,322 @@
+from OLED import SSD1306_I2C
+from encoder import Encoder
+from ultrasonic import sonic
+from motor import Motor
+import time
+from machine import PWM, Pin, I2C, ADC
+
+# OLED
+i2c = I2C(0, sda=Pin(12), scl=Pin(13))
+oled = SSD1306_I2C(128, 64, i2c)
+# inputs
+m_sensor = ADC(Pin(27))
+l_sensor = ADC(Pin(26))
+r_sensor = ADC(Pin(28))
+
+# Ultrasonic sensor
+USmiddle = sonic(3, 2)
+USright = sonic(5, 4)
+USleft = sonic(15, 14)
+# motors
+l_motor = Motor("left", str(9), str(8), 6)
+r_motor = Motor("right", str(10), str(11), 7)
+
+# servo fml
+pwm = PWM(Pin(15))
+pwm.freq(50)
+
+# encoder pins
+# enc = Encoder(18, 19)
+
+
+# function for controlling servo
+def setServoAngle(angle):
+    position = int(8000 * (angle / 180) + 1000)
+    pwm.duty_u16(position)
+
+
+# functions for controlling the motors
+def forward(left, right):
+    r_motor.set_forwards()
+    l_motor.set_forwards()
+    r_motor.duty(right)
+    l_motor.duty(left)
+
+
+def stop():
+    l_motor.duty(0)
+    r_motor.duty(0)
+
+
+def backward(left, right):
+    r_motor.set_backwards()
+    l_motor.set_backwards()
+    l_motor.duty(left)
+    r_motor.duty(right)
+
+
+def l_centre(L, M, R):
+    # these are the distance that each sensor is away from the centre of the robot
+    m = 0
+    l = -17
+    r = 17
+    # let's do the arithmetic mean formula
+    numerator = (L * l) + (M * m) + (R * r)
+    denominator = L + M + R
+    centroid = numerator / denominator
+    return centroid
+
+
+setServoAngle(90)
+# some line following variable I need to declare just in case the robot starts following lines without a line to follow
+last_turn = 'none'
+liner_state = 'none'
+# current state machine variables
+# liner (follows lines)
+# walls (goes through the cone walls that are on the course)
+# stop (stops the robot with no way out of this state. Must be restarted completely)
+
+# (CHECK ME BEFORE TESTING)
+state = 'liner'  # put the state machine in to the right state to start
+# we should never exit this while loop as if we did the state would be reset to whatever it is above.
+while True:
+    # state for following lines
+    while state == 'liner':
+        stop()
+        time.sleep(0.2)
+        # read IR sensors into variables
+        IR_left = l_sensor.read_u16()
+        IR_middle = m_sensor.read_u16()
+        IR_right = r_sensor.read_u16()
+        # do the line distance calculation with a function
+        line_dist = l_centre(IR_left, IR_middle, IR_right)
+        # pull the US sensors into variables to do some checks later in loop
+        USl = USleft.distance_mm()
+        USr = USright.distance_mm()
+        USm = USmiddle.distance_mm()
+        # read data onto oled for ease of access
+        oled.fill(0)
+        oled.text('State = {}'.format(state), 0, 0)
+        oled.text('IR_left = {}'.format(IR_left), 0, 12)
+        oled.text('IR_middle = {}'.format(IR_middle), 0, 24)
+        oled.text('IR_right = {}'.format(IR_right), 0, 36)
+        oled.text('Line Dist = {}'.format(line_dist), 0, 48)
+        oled.show()
+        # below is where we do checks for state switching or substate switching
+        # check if there are any walls in the way
+        if state != 'liner':
+            break
+        elif 1 < USl < 50 or 1 < USm < 50 or 1 < USr < 50:
+            state = 'walls'
+            break
+        # check if we've lost the line
+        elif IR_right < 2250 and IR_left < 2250 and IR_middle < 2250:
+            liner_state = 'lost'
+        elif line_dist <= 0:
+            liner_state = 'left'
+        elif line_dist > 0:
+            liner_state = 'right'
+
+        while liner_state == 'lost':
+            oled.fill(0)
+            oled.text('Line lost', 0, 0)
+            oled.text('checking for walls...', 0, 12)
+            oled.show()
+            length = [".", ".", ".", ".", ".", ".", ".", ".", ".", "."]
+            a = 0
+            # check if we need to start walling around
+            # this is also where we should check if it's a wall, or it's a garage
+            # for the moment I will pretend that there is no garage for my competency
+            for x in range(0, 181, 20):
+                setServoAngle(x)  # lines 46-48 turn servo
+                time.sleep(0.5)
+                length[a] = int(USmiddle.distance_mm())  # stores distance from each term in element of list
+                a += 1  # makes add distance to next variable in list
+            oled.fill(0)
+            oled.text('{} {}'.format(state, liner_state), 0, 0)
+            oled.text("{}, {}, {}".format(length[1], length[2], length[3]), 0, 24)
+            oled.text("{}, {}".format(length[4], length[5]), 0, 36)
+            oled.text("{}, {}, {}".format(length[6], length[7], length[8]), 0, 48)
+            oled.show()
+            time.sleep(2)
+            for each in length:
+                if each < 150:
+                    state = 'walls'
+                    liner_state = 'exit'
+                    break
+            if liner_state == 'exit':
+                break
+            IR_left = l_sensor.read_u16()
+            IR_middle = m_sensor.read_u16()
+            IR_right = r_sensor.read_u16()
+            if IR_left > 3000 or IR_middle > 3000 or IR_right > 3000:
+                if last_turn == 'left':
+                    liner_state = 'right'
+                    break
+                elif last_turn == 'right':
+                    liner_state = 'left'
+                    break
+                elif last_turn == 'none':
+                    break
+            liner_state = 'jiggle'
+            break
+        while liner_state == 'jiggle':
+            timer = 0
+            oled.fill(0)
+            oled.text('liner state = jiggling', 0, 0)
+            oled.show()
+            enc.clear_count()
+            if liner_state == 'none':
+                break
+            while last_turn == 'left':
+                forward(0, 50)
+                time.sleep(0.1)
+                stop()
+                IR_left = l_sensor.read_u16()
+                IR_middle = m_sensor.read_u16()
+                IR_right = r_sensor.read_u16()
+                time.sleep(0.1)
+                if IR_left > 3000 or IR_middle > 3000 or IR_right > 3000:
+                    stop()
+                    oled.fill(0)
+                    oled.text('liner state = jiggling', 0, 0)
+                    oled.text('encl = {}'.format(enc.get_left()), 0, 10)
+                    oled.text('encr = {}'.format(enc.get_right()), 0, 20)
+                    oled.show()
+                    time.sleep(100000)
+            while last_turn == 'right':
+                forward(50, 0)
+                time.sleep(0.1)
+                stop()
+                IR_left = l_sensor.read_u16()
+                IR_middle = m_sensor.read_u16()
+                IR_right = r_sensor.read_u16()
+                time.sleep(0.1)
+                if IR_left > 3000 or IR_middle > 3000 or IR_right > 3000:
+                    stop()
+                    oled.fill(0)
+                    oled.text('liner state = jiggling', 0, 0)
+                    oled.text('encl = {}'.format(enc.get_left()), 0, 10)
+                    oled.text('encr = {}'.format(enc.get_right()), 0, 20)
+                    oled.show()
+                    time.sleep(100000)
+        while liner_state == 'left':
+            forward(0, 50 + int(line_dist))
+            time.sleep(0.05)
+            IR_left = l_sensor.read_u16()
+            IR_middle = m_sensor.read_u16()
+            IR_right = r_sensor.read_u16()
+            line_dist = l_centre(IR_left, IR_middle, IR_right)
+            oled.fill(0)
+            oled.text('State = {}'.format(liner_state), 0, 0)
+            oled.text('IR_left = {}'.format(IR_left), 0, 12)
+            oled.text('IR_middle = {}'.format(IR_middle), 0, 24)
+            oled.text('IR_right = {}'.format(IR_right), 0, 36)
+            oled.text('Line Dist = {}'.format(line_dist), 0, 48)
+            oled.show()
+            if IR_right < 2250 and IR_left < 2250 and IR_middle < 2250:
+                liner_state = 'lost'
+                stop()
+                break
+            elif line_dist >= 0:
+                last_turn = 'left'
+                stop()
+                break
+
+        while liner_state == 'right':
+            forward(50 + int(line_dist), 0)
+            time.sleep(0.05)
+            IR_left = l_sensor.read_u16()
+            IR_middle = m_sensor.read_u16()
+            IR_right = r_sensor.read_u16()
+            line_dist = l_centre(IR_left, IR_middle, IR_right)
+            oled.fill(0)
+            oled.text('State = {}'.format(liner_state), 0, 0)
+            oled.text('IR_left = {}'.format(IR_left), 0, 12)
+            oled.text('IR_middle = {}'.format(IR_middle), 0, 24)
+            oled.text('IR_right = {}'.format(IR_right), 0, 36)
+            oled.text('Line Dist = {}'.format(line_dist), 0, 48)
+            oled.show()
+            if IR_right < 2250 and IR_left < 2250 and IR_middle < 2250:
+                liner_state = 'lost'
+                stop()
+                break
+            elif line_dist <= 0:
+                stop()
+                last_turn = 'right'
+                break
+        if liner_state == 'exit':
+            break
+    while state == 'walls':
+        a = 0
+        length = [".", ".", ".", ".", ".", ".", ".", ".", ".", "."]
+        IR_left = l_sensor.read_u16()
+        IR_middle = m_sensor.read_u16()
+        IR_right = r_sensor.read_u16()
+        if IR_left > 2800 or IR_middle > 2800 or IR_right > 2800:
+            state = 'liner'
+            break
+        for i in range(0, 181, 20):
+            l_motor.duty(0)
+            r_motor.duty(0)
+            setServoAngle(i)  # lines 46-48 turn servo
+            time.sleep(0.5)
+            length[a] = int(USmiddle.distance_mm())  # stores distance from each term in element of list
+            a += 1  # makes add distance to next variable in list
+            oled.text("{}, {}, {}".format(length[1], length[2], length[3]), 0, 0)  # gives distances from right of lard
+            oled.text("{}, {}".format(length[4], length[5]), 0, 10)  # gives distances facing forward
+            oled.text("{}, {}, {}".format(length[6], length[7], length[8]), 0,
+                      20)  # gives distances for left(taken from behind lard)
+            oled.text("{}".format(i), 0, 50)  # gives final degree (make sure it reaches 180)
+            oled.show()
+            oled.fill(0)  # makes it not overlap
+        setServoAngle(90)
+        time.sleep(0.5)
+        dl = (length[6] + length[7] + length[8]) / 3  # average of left distances
+        dm = (length[5] + length[4]) / 2  # average of middle distances
+        dr = (length[1] + length[2] + length[3]) / 3  # average of right distances
+        IR_left = l_sensor.read_u16()
+        IR_middle = m_sensor.read_u16()
+        IR_right = r_sensor.read_u16()
+        if IR_left > 2800 or IR_middle > 2800 or IR_right > 2800:
+            state = 'liner'
+            break
+        if dm > 250 and dr > 250 and dl > 250:  # there is nothing for 250 in all directions
+            r_motor.set_forwards()
+            l_motor.set_forwards()
+            l_motor.duty(60)
+            r_motor.duty(50)
+            time.sleep(0.1)
+        if (dm < 200 and dl > dr) or dr < 100:  # (close to front and closer to right) or close to right
+            r_motor.set_backwards()
+            l_motor.set_backwards()
+            l_motor.duty(65)
+            r_motor.duty(50)
+            time.sleep(0.1)
+        if (dm < 200 and dr > dl) or dl < 100:  # (close to front and closer to left) or close to left
+            r_motor.set_backwards()
+            l_motor.set_backwards()
+            l_motor.duty(65)
+            r_motor.duty(50)
+            time.sleep(0.1)
+        elif dl < dr:  # closer to left side
+            r_motor.set_forwards()
+            l_motor.set_forwards()
+            l_motor.duty(80)
+            r_motor.duty(50)
+            time.sleep(0.1)
+        elif dr < dl:  # closer to right side
+            r_motor.set_forwards()
+            l_motor.set_forwards()
+            l_motor.duty(60)
+            r_motor.duty(70)
+            time.sleep(0.1)
+
+    while state == 'stop':
+        stop()
+        oled.fill(0)
+        oled.text("stopped", 0, 0)
+        oled.show()
+        if 1 < USmiddle.distance_mm() < 50 or 1 < USleft.distance_mm() < 50 or 1 < USright.distance_mm() < 50:
+            state = 'walls'
+            break
